@@ -18,6 +18,11 @@ export interface KeywordConfig {
     readonly commonWords: ReadonlySet<string>;
 }
 
+export type UserIdentifier = {
+    userId?: string;
+    screenName?: string;
+};
+
 export class TweetAnalyzer {
     private static readonly DEFAULT_CONFIG: Readonly<KeywordConfig> = {
         maxBulletPoints: 5,
@@ -34,12 +39,38 @@ export class TweetAnalyzer {
     ) { }
 
     public async getFeedSummary(
-        userId: string,
+        user: string | UserIdentifier,
         period: AnalysisPeriod,
         maxFollows = 100
     ): Promise<ReadonlyArray<BulletSummary>> {
+        const userId = await this.resolveUserId(user);
+        if (!userId) {
+            throw new Error('Could not resolve user identifier');
+        }
         const follows = await this.getFollowedUsers(userId, maxFollows);
         return this.generateBulletPoints(follows, period);
+    }
+
+    private async resolveUserId(user: string | UserIdentifier): Promise<string | null> {
+        if (typeof user === 'string') {
+            // Try to resolve as screen name first
+            try {
+                return await this.scraper.getUserIdByScreenName(user);
+            } catch {
+                // If it fails, maybe it was a userId already
+                return user;
+            }
+        }
+
+        if (user.userId) {
+            return user.userId;
+        }
+
+        if (user.screenName) {
+            return await this.scraper.getUserIdByScreenName(user.screenName);
+        }
+
+        return null;
     }
 
     private async getFollowedUsers(
@@ -59,7 +90,7 @@ export class TweetAnalyzer {
     ): Promise<ReadonlyArray<Tweet>> {
         const tweets: Tweet[] = [];
         for await (const tweet of this.scraper.getTweetsByUserId(userId, 200)) {
-            if (this.isWithinPeriod(new Date(tweet.date), period)) {
+            if (tweet.timeParsed && this.isWithinPeriod(tweet.timeParsed, period)) {
                 tweets.push(tweet);
             }
         }
@@ -73,8 +104,9 @@ export class TweetAnalyzer {
         const summaries: BulletSummary[] = [];
 
         for (const follow of follows) {
+            if (!follow.userId) continue;
             const tweets = await this.getTimelineTweets(follow.userId, period);
-            if (tweets.length > 0) {
+            if (tweets.length > 0 && follow.username) {
                 const points = this.summarizeTweets(tweets);
                 summaries.push({ user: follow.username, points });
             }
@@ -88,26 +120,27 @@ export class TweetAnalyzer {
 
         // Most engaged tweets
         const topTweets = tweets
-            .filter(t => (t.likes + t.retweets) > this.config.minEngagement)
-            .sort((a, b) => (b.likes + b.retweets) - (a.likes + a.retweets))
+            .filter(t => ((t.likes ?? 0) + (t.retweets ?? 0)) > this.config.minEngagement)
+            .sort((a, b) => ((b.likes ?? 0) + (b.retweets ?? 0)) - ((a.likes ?? 0) + (a.retweets ?? 0)))
             .slice(0, 3);
 
         for (const tweet of topTweets) {
-            points.push(`🔥 ${tweet.text} (${tweet.likes} likes, ${tweet.retweets} RTs)`);
+            if (tweet.text) {
+                points.push(`🔥 ${tweet.text} (${tweet.likes ?? 0} likes, ${tweet.retweets ?? 0} RTs)`);
+            }
         }
 
         // Topic summaries
         const topics = this.groupByTopic(tweets);
         const topTopics = Object.entries(topics)
-            .sort(([, a], [, b]) => b.length - a.length)
+            .sort(([, a], [, b]) => ((b[0]?.likes ?? 0) + (b[0]?.retweets ?? 0)) - ((a[0]?.likes ?? 0) + (a[0]?.retweets ?? 0)))
             .slice(0, 2);
 
         for (const [topic, topicTweets] of topTopics) {
-            const mainTweet = topicTweets.sort(
-                (a, b) => (b.likes + b.retweets) - (a.likes + a.retweets)
-            )[0];
-
-            points.push(`📝 Topic "${topic}": ${mainTweet.text}`);
+            const mainTweet = topicTweets[0];
+            if (mainTweet?.text) {
+                points.push(`📝 Topic "${topic}": ${mainTweet.text}`);
+            }
         }
 
         return points.slice(0, this.config.maxBulletPoints);
@@ -117,11 +150,13 @@ export class TweetAnalyzer {
         const topics: Record<string, Tweet[]> = {};
 
         for (const tweet of tweets) {
-            const topic = this.extractMainTopic(tweet.text);
-            if (!topic) continue;
+            if (tweet.text) {
+                const topic = this.extractMainTopic(tweet.text);
+                if (!topic) continue;
 
-            if (!topics[topic]) topics[topic] = [];
-            topics[topic].push(tweet);
+                if (!topics[topic]) topics[topic] = [];
+                topics[topic].push(tweet);
+            }
         }
 
         return topics;
