@@ -1,7 +1,7 @@
 {
   "name": "agent-twitter-client",
   "description": "A twitter client for agents",
-  "keywords": [],
+  "keywords": ["twitter", "agent", "summary", "Bullet"],
   "version": "0.0.18",
   "main": "dist/default/cjs/index.js",
   "types": "./dist/types/index.d.ts",
@@ -16,12 +16,13 @@
       "require": "./dist/default/cjs/index.js"
     }
   },
-  "author": "elizaOS",
+  "authors": ["elizaOS", "codingsh"],
   "license": "MIT",
   "scripts": {
     "build": "rimraf dist && rollup -c",
     "docs:generate": "typedoc --options typedoc.json",
     "docs:deploy": "npm run docs:generate && gh-pages -d docs",
+    "build:zip": "npm run build && zip -r agent-twitter-client.zip dist package.json README.md LICENSE",
     "format": "prettier --write src/**/*.ts",
     "test": "jest"
   },

@@ -273,3 +273,35 @@ const videoTypes = {
 - Maximum video file size: 512MB
 - Supported image formats: JPG, PNG, GIF
 - Supported video format: MP4
+
+### Tweet Analysis and Summarization
+
+Generate bullet-point summaries of tweets from followed accounts:
+
+```ts
+import { TweetAnalyzer } from 'agent-twitter-client';
+
+const analyzer = new TweetAnalyzer(scraper, {
+  maxBulletPoints: 5,    // Maximum points per user
+  minEngagement: 50,     // Minimum likes + RTs for highlight
+  commonWords: new Set(['the', 'be', 'to'...]) // Words to ignore
+});
+
+const summaries = await analyzer.getFeedSummary(
+  userId,
+  { start: new Date('2024-01-01'), end: new Date() }
+);
+
+// Example response:
+interface BulletSummary {
+  user: string;
+  points: string[];  // e.g. ["🔥 Tweet with 500 likes", "📝 Topic 'AI': Latest developments"]
+}
+```
+
+Features:
+- Filters tweets by date range
+- Highlights high-engagement tweets (🔥)
+- Groups by topic using hashtags and keywords (📝)
+- Configurable engagement thresholds
+- Rate-limiting aware
